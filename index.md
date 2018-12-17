@@ -1,1 +1,2 @@
-Hello world
+# Lin Luxiang's personal blog
+
