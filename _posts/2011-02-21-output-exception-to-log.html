@@ -1,0 +1,41 @@
+---
+layout: post
+status: publish
+published: true
+title: 如何使用logger将错误信息输出到日志
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 39
+wordpress_url: http://blog.linluxiang.info/?p=39
+date: '2011-02-21 20:12:47 +0100'
+date_gmt: '2011-02-21 12:12:47 +0100'
+categories:
+- 技术
+- Python
+tags:
+- Python
+comments:
+- id: 5
+  author: smallarcher
+  author_email: zwxyswd@gmail.com
+  author_url: http://smallarcher.com
+  date: '2011-02-22 08:45:43 +0100'
+  date_gmt: '2011-02-22 00:45:43 +0100'
+  content: 相当不起眼啊，还是先在tornado的源码里面看到才注意到的。。。
+---
+<p>
+此文来自本人原JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/740456">原文地址</a></p>
+<p>
+今天在做分析http错误请求处理的时候遇到一个问题：当发生500错误的时候，如何将错误输出到日志当中呢？</p>
+<p>
+搜了一下python的doc，在logging模块中有不起眼的一行代码提供了解决方案。</p>
+<pre lang="python">
+mylog.error('error!', exc_info=True)  
+</pre>
+<p>
+其中，mylog就是Logger实例，当exc_info设置为True的时候，logger就会自动的调用sys.exc_info()函数，将traceback的信息打印到日志中。</p>

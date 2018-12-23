@@ -1,0 +1,71 @@
+---
+layout: post
+status: publish
+published: true
+title: C++的pImpl idiom小探
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 127
+wordpress_url: http://blog.linluxiang.info/?p=127
+date: '2015-03-13 15:28:02 +0100'
+date_gmt: '2015-03-13 07:28:02 +0100'
+categories:
+- Uncategorized
+tags: []
+comments: []
+---
+<p>好久没写博客了。最近重拾C++，在看Effective Modern C++，看到有关pImpl idiom的相关内容，以前这块就没有搞得很清楚，就自己研究了一下</p>
+<p>首先， PImpl Idiom的作用，我看起来主要有两个。一是为了让实现和接口分离，二减少重新编译的时间，当具体实现代码所依赖的头文件改动的时候，类本身的头文件不会变动，而导致所有依赖的库重新编译。</p>
+<p>第一次实现的版本如下</p>
+<pre>#include <memory>
+#include <string>
+class Person {
+public:
+    Person(std::string name);
+    void set_name(std::string name);
+    std::string name();
+private:
+    struct Impl;
+    std::unique_ptr<Impl> pImpl_;
+};</pre>
+<p>编译的时候遇到一个错误：</p>
+<blockquote><p>error: invalid application of 'sizeof' to an incomplete type 'Person::Impl'<br />
+static_assert(sizeof(_Tp) > 0, "default_delete can not delete incomplete type");<br />
+^~~~~~~~~~~</p></blockquote>
+<p>原因就是， 没有自定义Person的destructor，系统就会自动加上一个。。而在这个系统自动加上Person的destructor中，会尝试去销毁pImpl这个unique_ptr，而且由于系统采用的是inline的方式插入destructor，所以相当于在头文件中，就包含了上述的那个sizeof(_Tp)的代码。</p>
+<p>而与此同时，struct Impl;是一个前置声明语句，编译的时候是不知道他的具体大小的。所以编译就出错了。</p>
+<p>解决办法就是，在Person中声明一个desturctor，让编译器不会自动生成默认的deconstructor就行。但是这样同样会有问题，我在这里其实并不需要特殊处理，所以我又想用系统自动生成的代码。怎么办呢？</p>
+<p>解决办法就是在实现这个方法的时候，加上一个= default这个c++11新加的方法。</p>
+<p>新代码如下：</p>
+<pre>person.hpp</pre>
+<pre>class Person {
+public:
+    Person(std::string name);
+    virtual ~Person();
+    void set_name(std::string name);
+    std::string name();
+private:
+    struct Impl;
+    std::unique_ptr<Impl> pImpl_;
+};</pre>
+<pre>person.cpp</pre>
+<pre>Person::~Person() = default;</pre>
+<p>问题完美解决</p>
+<p>按照一般的想法，理解一个东西与否，还需要提出一个假设，然后验证这个假设是否和事实一样。那么我在这里假设，如果我直接把这个Person::~Person() = default;的代码移到头文件之中去，让他用inline的方式生成destructor，同样会有编译错误。</p>
+<p>代码改成如下：</p>
+<pre>class Person {
+public:
+    Person(std::string name);
+    virtual ~Person() = default;
+    void set_name(std::string name);
+    std::string name();
+private:
+    struct Impl;
+    std::unique_ptr<Impl> pImpl_;
+};</pre>
+<p>不出所料果然出现了同样的编译错误， 问题解决。</p>

@@ -1,0 +1,127 @@
+---
+layout: post
+status: publish
+published: true
+title: Python闭包再研究
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 88
+wordpress_url: http://blog.linluxiang.info/?p=88
+date: '2011-03-03 19:38:26 +0100'
+date_gmt: '2011-03-03 11:38:26 +0100'
+categories:
+- 技术
+- Python
+tags:
+- Python
+comments:
+- id: 72
+  author: Flacro
+  author_email: flacro.only@gmail.com
+  author_url: http://none
+  date: '2012-01-05 02:34:49 +0100'
+  date_gmt: '2012-01-04 18:34:49 +0100'
+  content: FP适用于哪里或者解决哪些问题呢？a . a
+- id: 1276
+  author: linluxiang
+  author_email: linluxiang@gmail.com
+  author_url: ''
+  date: '2014-01-22 17:13:02 +0100'
+  date_gmt: '2014-01-22 09:13:02 +0100'
+  content: 分布式计算
+---
+<p>
+此文来自本人原JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/793608">原文地址</a></p>
+<p>
+前两天写了一篇文章，讲了一下Python的闭包。刚好今天又看到一个小问题，和Python闭包有点相关。顺手记录下来。</p>
+<p>
+如下一段代码</p>
+<pre lang="python">
+funcs = []  
+for i in xrange(10):  
+    def bar(n):  
+        return n + i  
+    funcs.append(bar)  
+  
+print funcs[3](5)  
+</pre>
+<p>
+这段代码中，我们期望得到的结果是3+5为8。但是实际得到的结果是什么呢？是14。</p>
+<p>
+14是怎么来的？</p>
+<p>
+反汇编看看：</p>
+<pre lang="sh">
+7           0 LOAD_FAST                0 (n)  
+            3 LOAD_GLOBAL              0 (i)  
+            6 BINARY_ADD  
+            7 RETURN_VALUE   
+</pre>
+<p>
+注意i是global。</p>
+<p>
+得到14的原因就是，funcs<code>[3]</code>这个函数对象获取i的值，是在执行的时候。而i的作用域是global。也就是说，当这个func开始执行的时候，i已经变成9了。那么结果当然等于14了。</p>
+<p>
+从这个结果看，以上代码和下面代码效果是等价的。</p>
+<pre lang="python">
+funcs = []  
+for i in xrange(10):  
+    pass  
+  
+def bar(n):  
+    return n + i  
+  
+funcs.append(bar)#这句重复10遍  
+print funcs[3](5) 
+</pre>
+<p>
+很无趣吧。那么考虑一下，如果把i丢到闭包来做会怎样？</p>
+<pre lang="python">
+funcs = []  
+def foo(m):  
+    for i in xrange(m):  
+        def bar(n):  
+            return n + i  
+        funcs.append(bar)  
+foo(10)  
+print funcs[3](5) 
+</pre>
+<p>
+很遗憾，结果依然是14.</p>
+<p>
+反汇编代码如下：</p>
+<pre lang="sh">
+9           0 LOAD_FAST                0 (n)  
+            3 LOAD_DEREF               0 (i)  
+            6 BINARY_ADD  
+            7 RETURN_VALUE  
+</pre>
+<p>
+唉，只是傻傻的远程访问而已。</p>
+<p>
+<strong>&ldquo;所有的bar代码中，i仅仅只是在closure中的一个引用而已。指向的依然是同一个对象。当这个对象被改变，所有的bar执行的时候获得的值都是修改后的值&rdquo;。</strong></p>
+<p>
+顺手写了一段JavaScript来测试，发现结果是一样的。也是会全局改变。具体代码如下：</p>
+<p>
+但是用haskell实现了一个，完全符合预期的结果。</p>
+<pre lang="haskell">
+main = do  
+    let funcs = [(\n -> n + i) | i <- [0..9] ]  
+    let x0: x1 : x2: x3: xs = funcs  
+    return (x3 5)
+</pre>
+<p>
+返回结果是8。</p>
+<p>
+看来Python对FP的支持还是比不上Haskell这种正统的函数式语言。</p>
+<p>
+个人觉得如果Python要发展FP的话，可以考虑如下解决方案：区别本地变量和闭包变量。当声明函数的时候将闭包变量拷贝一份到本地，同时保留指向原闭包对象的引用。在搜索名字的时候，始终都是先搜索本地变量，再搜索本地闭包变量副本，再搜索全局变量。当需要修改的时候，如果是本地变量就直接修改。如果是闭包变量的时候，将原来闭包真正指向的对象进行修改，同时覆盖掉本地的闭包副本。</p>
+<p>
+这个方法只是暂时的考虑，没有仔细的推敲。乍看之下似乎可以解决问题。</p>
+<p>
+不过，Python毕竟是OO的语言。没有Haskell或者Lisp那种天生的作用域的控制能力。唉。那就用OO的方式来搞Python把。</p>

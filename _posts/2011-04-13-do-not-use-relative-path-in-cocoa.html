@@ -1,0 +1,31 @@
+---
+layout: post
+status: publish
+published: true
+title: iOS开发中不要使用相对路径
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 113
+wordpress_url: http://blog.linluxiang.info/?p=113
+date: '2011-04-13 17:51:08 +0200'
+date_gmt: '2011-04-13 09:51:08 +0200'
+categories:
+- Uncategorized
+tags: []
+comments:
+- id: 40
+  author: linluxiang
+  author_email: linluxiang@gmail.com
+  author_url: ''
+  date: '2011-04-22 20:29:09 +0200'
+  date_gmt: '2011-04-22 12:29:09 +0200'
+  content: test
+---
+<p>今天在写iOS应用的时候遇到一个问题，使用[NSData dataWithContentOfFile:@"foo"]的时候，总是无法读取正确的文件内容。而使用[NSData dataWithContentOfFile:[[NSBundle mainBundle] pathForResource:@"foo" ofType:@""]的时候就可以。</p>
+<p>经过Google以后知道。当使用相对路径的时候，其实他相对的当前目录并不是程序运行的目录，而是&ldquo;/&rdquo;。只有使用[NSBundle mainBundle]来生成的路径才是文件真正的路径。</p>
+<p>在此记录一下：在以后的开发中不直接使用任何相对路径，而是使用经过计算以后的绝对路径。</p>

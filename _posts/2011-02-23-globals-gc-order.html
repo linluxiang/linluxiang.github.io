@@ -1,0 +1,165 @@
+---
+layout: post
+status: publish
+published: true
+title: Python中globals对象的回收顺序分析
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 77
+wordpress_url: http://blog.linluxiang.info/?p=77
+date: '2011-02-23 18:51:21 +0100'
+date_gmt: '2011-02-23 10:51:21 +0100'
+categories:
+- 技术
+- Python
+tags:
+- Python
+comments: []
+---
+
+<p>
+此文来自本人原JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/746224">原文地址</a></p>
+<p>
+先提示，本文需要一定的python源码基础。许多内容请参考《python源码剖析》。下面切入正题。</p>
+<p>
+今天在群里有人问了一个问题。形如如下的一段程序。</p>
+<pre lang="python">
+class person:  
+    sum = 0  
+    def __init__(self,name):  
+        self.name=name  
+        person.sum += 1  
+  
+    def __del__(self):  
+        person.sum -= 1  
+        print "%s is leaving" % self.name  
+  
+a = person('a')  
+a2 = person('a2') 
+</pre>
+<p>
+这段程序的预期的执行结果应该是"a is leaving"和"a2 is leaving"。但是实际上却出乎意料之外，实际的执行结果如下：</p>
+<pre lang="bash">
+a is leaving  
+Exception exceptions.AttributeError: "'NoneType' object has no attribute 'sum'" in   
+<bound method person.__del__ of <__main__.person instance at 0x4a18f0>> ignored  
+</pre>
+<p>
+为什么引用的名字不同造成的结果会有这么大的差别呢？</p>
+<p>
+分析表面的原因，是person这个引用被指向了None。那他是不是真的是None呢？</p>
+<pre lang="bash">
+__main__.person  
+None  
+Exception exceptions.AttributeError: "'NoneType' object has no attribute 'sum'"  
+ in <bound method person.__del__ of <__main__.person instance at 0x4a18c8>> ignored  
+</pre>
+<p>
+看来是真的变成了None了。</p>
+<p>
+初步分析原因，应该是程序在执行结束以后，python虚拟机清理环境的时候将"person"这个符号先于"a2"清理了，所以导致在a2的析构函数中无法找到"person"这个符号了。</p>
+<p>
+但是转念一想还是不对，如果是"person"符号找不到了，应该是提示&ldquo;name 'person' is not defined&rdquo;才对。说明"person"这个符号还在，那"person"指向的class_object对象还在吗？改变程序为以下格式：</p>
+<pre lang="python">
+class person:  
+    sum = 0  
+    def __init__(self,name):  
+        self.name=name  
+        person.sum += 1  
+  
+    def __del__(self):  
+        #person.sum -= 1  
+        self.__class__.sum -= 1 #1
+        #print "%s is leaving" % self.name  
+  
+a = person('a')  
+a2 = person('a2')  
+</pre>
+<p>
+#1就是修改部分，利用自身的<code>__class__</code>来操作。运行结果一切正常。</p>
+<p>
+说明python虚拟机在回收的过程中，只是将"person"这个符号设置成None了。这个结论同时带来2个问题：第一，为什么会设置成None？第二：为什么"person"会先于"a2"而晚于"a"被回收？</p>
+<p>
+先来分析第二个问题。第一反应是不是按照字母的顺序来回收？但是马上这个结论被推翻。"a"和"a2"都在"person"的前面。那么难道是根据globals()这个字典的key顺序来回收？执行一下globals().keys()方法，得到以下结果：</p>
+<pre lang="bash">
+['a', '__builtins__', '__file__', 'person', 'a2', '__name__', '__doc__'];
+</pre>
+<p>
+看来的确是这样。</p>
+<p>
+但是为什么是这样？要得出这个结论，看来只有去python源码中找答案了。</p>
+<p>
+大家都知道，python代码在运行的时候，会存在一个frameobject对象来表示运行时的环境。类似于c语言的栈帧，也有点像lisp的函数的生存空间，看起来答案要从frameobject.c这个文件中去找了。</p>
+<p>
+在frameobject.c中发现了一个函数：static void frame_dealloc(PyFrameObject *f)。看来解决问题的关键就在眼前。</p>
+<p>
+在frame_dealloc里面截取了以下一段代码：</p>
+<pre lang="c">
+Py_XDECREF(f->f_back);  
+Py_DECREF(f->f_builtins);  
+Py_DECREF(f->f_globals);//1
+Py_CLEAR(f->f_locals);  
+Py_CLEAR(f->f_trace);  
+Py_CLEAR(f->f_exc_type);  
+Py_CLEAR(f->f_exc_value);  
+Py_CLEAR(f->f_exc_traceback);      
+</pre>
+<p>
+原来减少了引用啊。。关于Py_DECREF这个宏，python源码里面的解释是这样的：</p>
+<blockquote><p>
+The macros Py_INCREF(op) and Py_DECREF(op) are used to increment or decrement reference counts. Py_DECREF calls the object's deallocator function when the refcount falls to 0;
+</p></blockquote>
+<p>
+这么说来，我们就要去找f_globals的析构函数了。f_globals是个什么呢？当然是PyDictObject了。证据么遍地都是啊，比如随手找了一个，在PyFrameObject * PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,PyObject *locals)这个函数里面有一段代码：</p>
+<pre lang="c">
+#ifdef Py_DEBUG  
+    if (code == NULL || globals == NULL || !<span style="color: #ff0000;">PyDict_Check(globals)</span> ||  
+        (locals != NULL &amp;&amp; !PyMapping_Check(locals))) {  
+        PyErr_BadInternalCall();  
+        return NULL;  
+    }  
+#endif  
+</pre>
+<p>
+PyDict_Check。。。检查是否是Dict对象。好吧，此处略过，直接奔向dictobject.c看看里面的代码。</p>
+<pre lang="c">
+static void  
+dict_dealloc(register dictobject *mp)  
+{  
+    register dictentry *ep;  
+    Py_ssize_t fill = mp->ma_fill;  
+    PyObject_GC_UnTrack(mp);  
+    Py_TRASHCAN_SAFE_BEGIN(mp)  
+    <span style="color: #ff0000;">for (ep = mp->ma_table; fill > 0; ep++) {  
+        if (ep->me_key) {  
+            --fill;  
+            Py_DECREF(ep->me_key);  #  
+            Py_XDECREF(ep->me_value); #仅仅只是引用计数减一  
+        }  
+    }</span>  
+//以下略  
+</pre>
+<p>
+哈哈哈。还真是按照key的顺序来一个一个清除的。</p>
+<p>
+不过，怎么又回到了Py_DECREF啊？</p>
+<p>
+看来最终解释这个问题要回到GC上面了。</p>
+<p>
+其实从这个地方也可以看出第一个问题的答案了，为什么是None？</p>
+<p>
+从上面代码可以看出，dictobject对象在析构的时候，仅仅只是将value的引用计数减一，至于这个对象什么时候被真正回收，其实是由GC决定而不确定的。也就是说为什么是None，是因为减一了以后，凑巧GC到了而已。</p>
+<p>
+根据Python本身的文档。</p>
+<blockquote><p>
+    Warning: Due to the precarious circumstances under which <code>__del__()</code> methods are invoked, exceptions that occur during their execution are ignored, and a warning is printed to sys.stderr instead. <b>Also, when <code>__del__()</code> is invoked in response to a module being deleted (e.g., when execution of the program is done), other globals referenced by the <code>__del__()</code> method may already have been deleted.</b> For this reason, <code>__del__()</code> methods should do the absolute minimum needed to maintain external invariants. Starting with version 1.5, Python guarantees that globals whose name begins with a single underscore are deleted from their module before other globals are deleted; if no other references to such globals exist, this may help in assuring that imported modules are still available at the time when the <code>__del__()</code> method is called.
+</p></blockquote>
+<p>
+Python不能保证_<em>del</em><em>被调用的时候所有的引用都有，所以，尽量不要overried类的</em><em>del</em>_方法。</p>
+<p>
+到此结束。</p>

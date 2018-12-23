@@ -1,0 +1,261 @@
+---
+layout: post
+status: publish
+published: true
+title: Python闭包研究
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 83
+wordpress_url: http://blog.linluxiang.info/?p=83
+date: '2011-02-23 19:13:27 +0100'
+date_gmt: '2011-02-23 11:13:27 +0100'
+categories:
+- 技术
+- Python
+tags: []
+comments: []
+---
+<p>
+此文来自本人原JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/789946">原文地址</a></p>
+<p>
+其实很早以前就想写这么一篇文章了。一直没有机会。正好今天和同事讨论Python闭包的问题，趁着没遗忘赶快记录下来。以下代码运行的Python版本是2.5。</p>
+<p>
+问题还是那个很经典的问题：如下代码会抛一个错误</p>
+<pre lang="python">
+def foo():  
+    a = 1   
+    def bar():  
+        a = a + 1  
+    bar()  
+    print a  
+</pre>
+<p>
+错误则是：</p>
+<pre>
+UnboundLocalError: local variable 'a' referenced before assignment   
+</pre>
+<p>
+原因分析，直接上dis模块解析bar的汇编代码。得到以下结果：</p>
+<pre>
+12           0 LOAD_FAST                0 (a)  
+             3 LOAD_CONST               1 (1)  
+             6 INPLACE_ADD  
+             7 STORE_FAST               0 (a)  
+            10 LOAD_CONST               0 (None)  
+            13 RETURN_VALUE     
+</pre>
+<p>
+可以看到，造成这个异常的结果是LOAD_FAST没有找到local变量。STORE_FAST语句的作用是绑定一个local变量。那么在储存变量之前就先去读，当然是会报错了。可是，明明是a = a + 1。而按照赋值语句先执行右边的规律来看，他应该先去外层的a那里读取值，然后再新建一个local的名字a，把值赋给local的a啊？</p>
+<p>
+原因暂且放下，先看一段能正常执行的代码。</p>
+<p>
+把前面代码中的a = a + 1改成b = a + 1。反汇编得到以下代码。</p>
+<pre>
+13           0 LOAD_DEREF               0 (a)  
+             3 LOAD_CONST               1 (1)  
+             6 BINARY_ADD  
+             7 STORE_FAST               0 (b)  
+            10 LOAD_CONST               0 (None)  
+            13 RETURN_VALUE            
+ 
+</pre>
+<p>
+果然按照原来设想的一样，a在这个地方变成了LOAD_DEREF，变成了访问外围的值，然后和1想加以后，储存在一个本地的变量b里面。</p>
+<p>
+正确的程序和错误的程序的差别就是，错误的里面，a是赋值语句的左边。</p>
+<p>
+这看起来不经心的一个差别，会不会是原因呢？答案是YES！看python的PEP227中的一段话。</p>
+<blockquote><p>
+If a name is bound anywhere within a code block, all uses of the name within the block are treated as references to the current block.
+</p></blockquote>
+<p>
+这句话非常拗口。我换一种通俗的方式来解释一下。模拟一下python编译器的行为。首先编译器看到了a = a + 1这句话，发现这是一个赋值语句。先检查右边，遇到了一个名字叫做a的东西。a是什么？编译器问自己。会不会是一个局部变量？于是编译器就傻傻的找到规则，规则表说：如果一个名字出现在参数声明，赋值语句（左边），函数声明，类声明，import语句，for语句和except语句中，这就是一个局部变量。ok。编译器从头到尾一看，a就在一个赋值语句的左边，那么a是一个局部变量没跑了。于是生成一条记录LOAD_FAST 0。你是局部变量，让你运行快一点。接着，分析完右边分析左边，赋值语句左边一定是一个局部变量，简单，你就在0号位置把，直接生成STORE_FAST 0，把栈顶的值给你。编译器顺利的编译结束。下面轮到虚拟机运行了。虚拟运行到这个语句就犯糊涂了，叫我LOAD_FAST 0。可是0里面什么东西都没有啊。我擦勒。只好报错了。</p>
+<p>
+而第二段代码为什么能够正确执行呢？其实就是因为，编译器在整个代码块里面没有发现有绑定名字给a，也没有发现a是一个global对象，所以，就生成一个LOAD_DEREF  语句，告诉虚拟机，a不在这个里面。到别的地方去找他。</p>
+<p>
+那么这个别的地方究竟是什么地方呢？如果python没有这个一定是局部变量的规则，是不是就能修改了呢？</p>
+<p>
+我们继续分析。</p>
+<p>
+先找到LOAD_DEREF的定义是什么？查看dis这个模块的说明，里面有如下的文字：</p>
+<blockquote><p>
+LOAD_DEREF(i)<br />
+Loads the cell contained in slot i of the cell and free variable storage. Pushes a reference to the object the cell contains on the stack.
+</p></blockquote>
+<p>
+大意就是，加载cell[i]到栈顶。cell是一个什么？这时候，联想到Python的CodeObject里面有一个属性叫做co_cellvars.会不会和这个有关？</p>
+<p>
+查了文档以后发现如下定义</p>
+<blockquote><p>
+co_cellvars is a tuple containing the names of local variables that are referenced by nested functions;
+</p></blockquote>
+<p>
+被嵌套的函数引用的局部变量？好奇特的说法啊。真这么神奇？执行下列代码。</p>
+<pre lang="python">
+def foo():  
+    a = 1   
+    def bar():  
+        b = a + 1  
+    print 'bar cellvars:', bar.func_code.co_cellvars  
+  
+foo()  
+  
+print 'foo cellvars:', foo.func_code.co_cellvars  
+</pre>
+<p>
+执行结果是：</p>
+<pre>
+bar cellvars: ()  
+foo cellvars: ('a',)     
+</pre>
+<p>
+还真是的，a在bar中引用了，所以被加入到cellvars里面。*<strong>需要注意的是，他这里只是把名字放到了cellvar中，也就是说，这个闭包中的对象，依然只是一个引用而已。当这个bar调用的时候，是会顺着引用找到真正的值的。而如果真正的值被修改，在所有的bar里面都会体现。</strong></p>
+<p>
+这个过程是怎么加入的呢？反汇编一下foo的代码：</p>
+<pre>
+2           0 LOAD_CONST               1 (1)  
+            3 STORE_DEREF              0 (a)  
+  
+3           6 LOAD_CLOSURE             0 (a)  
+            9 BUILD_TUPLE              1  
+           12 LOAD_CONST               2 (<code object bar at 0x48f458, file "test.py", line 3>)  
+           15 MAKE_CLOSURE             0  
+           18 STORE_FAST               0 (bar)  
+           21 LOAD_CONST               0 (None)  
+           24 RETURN_VALUE            
+</pre>
+<p>
+看到奇特的STORE_DEREF, LOAD_CLOSURE, MAKE_CLOSURE指令。</p>
+<p>
+这三个指令的作用分别如下：</p>
+<blockquote><p>
+STORE_DEREF(i)<br />
+Stores TOS into the cell contained in slot i of the cell and free variable storage.
+</p></blockquote>
+<blockquote><p>
+LOAD_CLOSURE(i)<br />
+Pushes a reference to the cell contained in slot i of the cell and free variable storage. The name of the variable is co_cellvars<code>[i]</code> if i is less than the length of co_cellvars. Otherwise it is co_freevars[i - len(co_cellvars)].
+</p></blockquote>
+<blockquote><p>
+MAKE_CLOSURE(argc)<br />
+Creates a new function object, sets its func_closure slot, and pushes it on the stack. TOS is the code associated with the function, TOS1 the tuple containing cells for the closure&rsquo;s free variables. The function also has argc default parameters, which are found below the cells.
+</p></blockquote>
+<p>
+看来是编译器发现foo函数里面有一个嵌套的bar函数以后，就把在bar中引用的局部变量a放到一个cell当中，然后将所有的对象都生成成一个tuple，赋值给bar这个funcobject的func_closure。</p>
+<p>
+为了查看神奇的效果，写下面一段代码运行一下看看：</p>
+<pre lang="python">
+def foo():  
+    a = 1   
+    def bar():  
+        b = a + 1  
+    return bar  
+      
+b = foo()  
+print 'bar func_closure:', b.func_closure  
+</pre>
+<p>
+如果这程序按照猜测的结果运行，那么将会返回一个cell的tuple。执行结果如下。</p>
+<pre>
+bar func_closure: (<cell at 0x454690: int object at 0x803388>,)
+</pre>
+<p>
+果然不出所料。那么func_closure的作用在文档里面怎么描述呢？</p>
+<blockquote><p>
+func_closure	None or a tuple of cells that contain bindings for the function&rsquo;s free variables.	Read-only
+</p></blockquote>
+<p>
+看来这个东东涉及到的是Python的名字查找顺序的问题。先local，再闭包，再global。</p>
+<p>
+详细内容可以参看PEP227里面有这么一句话。</p>
+<blockquote><p>
+The implementation adds several new opcodes and two new kinds of
+</p></blockquote>
+<p>
+names in code objects. A variable can be either a cell variable<br />
+or a free variable for a particular code object. A cell variable<br />
+is referenced by containing scopes; as a result, the function<br />
+where it is defined must allocate separate storage for it on each<br />
+invocation. A free variable is referenced via a function's<br />
+closure.</p>
+<blockquote><p>
+The choice of free closures was made based on three factors.
+</p></blockquote>
+<p>
+First, nested functions are presumed to be used infrequently,<br />
+deeply nested (several levels of nesting) still less frequently.<br />
+Second, lookup of names in a nested scope should be fast.<br />
+Third, the use of nested scopes, particularly where a function<br />
+that access an enclosing scope is returned, should not prevent<br />
+unreferenced objects from being reclaimed by the garbage<br />
+collector.</p>
+<p>
+相信看到前面func_closure是readonly，大家一定非常失望。看看别的语言的实现如何。</p>
+<p>
+javascript的版本1。</p>
+<pre lang="javascript">
+function foo(){  
+    var num = 1;  
+    function bar(){  
+        var num = num + 1;  
+        alert(num);  
+    }  
+    bar()  
+}  
+foo();  
+</pre>
+<p>
+这个版本会报<a href="NaN.html">NaN</a>。。说明Python的问题Javascipt也有。</p>
+<p>
+那如果说num不声明为var呢？</p>
+<pre lang="javascript">
+function foo(){  
+    var num = 1;  
+    function bar(){  
+        num = num + 1;  
+        alert(num);  
+    }  
+    bar()  
+}  
+foo();
+</pre>
+<p>
+正确提示2.。</p>
+<p>
+要是Python也有这样的机制好了。。</p>
+<p>
+令人高兴的是，python3里面终于改观了。从语法到底层全都支持了（貌似是一个性质）。</p>
+<p>
+语法上加上了nonlocal关键字。</p>
+<pre lang="python">
+def foo():  
+    a = 1   
+    def bar():  
+        nonlocal a  
+        a = a + 1  
+        print(a)  
+    return bar  
+   
+foo()()  
+</pre>
+<p>
+正确返回2！！</p>
+<p>
+底层加上了可爱的下面两个函数。</p>
+<blockquote><p>
+<a href="PyObject.html">PyObject</a>* PyFunction_GetClosure(<a href="PyObject.html">PyObject</a> *op)&para;<br />
+Return value: Borrowed reference.<br />
+Return the closure associated with the function object op. This can be NULL or a tuple of cell objects.<br />
+int PyFunction_SetClosure(<a href="PyObject.html">PyObject</a> *op, <a href="PyObject.html">PyObject</a> *closure)<br />
+Set the closure associated with the function object op. closure must be Py_None or a tuple of cell objects.<br />
+Raises <a href="SystemError.html">SystemError</a> and returns -1 on failure.
+</p></blockquote>
+<p>
+终于可以操作闭包了。哈哈哈哈。。</p>
+<p>
+其实说到最后，如果python中有种机制能支持匿名代码块就好了。嘿嘿。到此结束。</p>

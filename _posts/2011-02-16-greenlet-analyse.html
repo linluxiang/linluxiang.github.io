@@ -1,0 +1,66 @@
+---
+layout: post
+status: publish
+published: true
+title: 使用greenlet中一点简单心得
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 16
+wordpress_url: http://blog.linluxiang.info/?p=16
+date: '2011-02-16 14:08:53 +0100'
+date_gmt: '2011-02-16 06:08:53 +0100'
+categories:
+- 技术
+- Python
+tags:
+- Python
+- greenlet
+comments:
+- id: 3
+  author: smallarcher
+  author_email: zwxyswd@gmail.com
+  author_url: http://smallarcher.com
+  date: '2011-02-17 09:41:50 +0100'
+  date_gmt: '2011-02-17 01:41:50 +0100'
+  content: "哈哈，这个域名太直接了吧。\r\n\r\ngreenlet之前是重构的时候用来把各种异步调用变得看起来像同步的样子。\r\n\r\n最近的这个技术沙龙主题蛮给力啊，事后有视频？还是音频？"
+---
+<p>想要对greenlet的switch机制进行测试，于是写了以下这段代码。</p>
+<pre lang="python">
+
+from greenlet import *
+
+def test1(x, y):
+    print 'in test1'
+    z = gr2.switch(x+y)
+    print z
+    print 'out test1'
+
+def test2(u):
+    print 'in test2'
+    print u
+    gr1.switch(42)
+    print 'out test1'
+
+gr1 = greenlet(test1)
+gr2 = greenlet(test2)
+gr1.switch("hello", " world")
+  
+</pre>
+<p>
+运行结果:</p>
+<pre lang="bash">
+in test1
+in test2
+hello world
+42
+out test1
+</pre>
+<p>
+从这个层面可以看出。greenlet的协程其实是一个切换机制。就是主动将自己的运行过程让给别的协程。切换需要有目标，并且可以在switch里面传入参数。如果是第一次运行，switch的参数就是作为协程的run的函数的参数传入。如果是运行中，就作为switch的返回值。<br />
+以上隐含的内容是，如果在运行中想要切换到别的协程去做事，那么不能保证那个协程一定会返回结果。<br />
+考虑在greenlet上面加上一个隐含回复机制。</p>

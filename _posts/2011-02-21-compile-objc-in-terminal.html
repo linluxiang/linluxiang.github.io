@@ -1,0 +1,69 @@
+---
+layout: post
+status: publish
+published: true
+title: 用命令行编译Objective-C程序
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 45
+wordpress_url: http://blog.linluxiang.info/?p=45
+date: '2011-02-21 20:28:24 +0100'
+date_gmt: '2011-02-21 12:28:24 +0100'
+categories:
+- 技术
+- iOS
+tags:
+- iOS
+comments: []
+---
+<p>
+此文来自本人原JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/650784">原文地址</a>。</p>
+<p>
+最近在看Objc的开发，虽然Xcode很好用，但是还是不太习惯这种大型的IDE开发。 于是自己尝试着在Terminal下面编译。 先是最简单的一段程序。</p>
+<pre  lang="objc">
+#import <Foundation/Foundation.h>  
+
+int main(int argc, const char *argv[])  
+{  
+    NSLog(@"Hello, World!");  
+    return 0;  
+  
+}  
+</pre>
+<p>
+直接 gcc helloworld.m，报错。</p>
+<p>
+错误提示如下</p>
+<pre lang="bash">
+Undefined symbols:  
+  "___CFConstantStringClassReference", referenced from:  
+      cfstring=Hello, World! in ccCxrkF8.o  
+  "_NSLog", referenced from:  
+      _main in ccCxrkF8.o  
+ld: symbol(s) not found  
+collect2: ld returned 1 exit status    
+</pre>
+<p>
+猜测可能lib的位置不对，于是find了一下&ldquo;Foundation&rdquo;这个framework的位置，用以下命令编译：</p>
+<pre lang="bash">
+gcc helloworld.m -L/System/Library/Frameworks/Foundation.framework/  
+</pre>
+<p>
+还是一样的错误。</p>
+<p>
+无奈之下man gcc从头看到尾。又去google了一下gcc for macosx。发现有一个-framework的选项。尝试了一下。</p>
+<pre lang="bash">
+gcc helloworld.m -framework Foundation  
+</pre>
+<p>
+终于成功了</p>
+<pre lang="bash">
+2010-04-22 19:11:11.643 a.out[8932:903] Hello, World! 
+</pre>
+<p>
+总结一下：macosx下面，objc的系统调用都是集成在framework里面的，要想编译的话，就必须用-framework选项将framework包含进来才行。</p>

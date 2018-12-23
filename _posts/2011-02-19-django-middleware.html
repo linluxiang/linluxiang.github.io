@@ -1,0 +1,60 @@
+---
+layout: post
+status: publish
+published: true
+title: Django的Middleware开发有感
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 25
+wordpress_url: http://blog.linluxiang.info/?p=25
+date: '2011-02-19 00:58:24 +0100'
+date_gmt: '2011-02-18 16:58:24 +0100'
+categories:
+- Uncategorized
+- 技术
+tags: []
+comments: []
+---
+<p>
+此文来自本人原JavaEye博客，发表于2009年2月26日。<a href="http://linluxiang.javaeye.com/blog/339577">原文地址</a></p>
+<p>
+Django应该算是目前最火的Pyhton的Web框架了把。个人感觉，超级方便的ORM，清晰而功能明确的分层以及Killer级别的后台管理都让习惯了Java那一套庞大复杂的人有了眼前一亮的感觉。</p>
+<p>
+不过用久了就会发现，django整个框架之中有一个极其繁琐的地方，就好像一块整洁的布上有一个污点一样，令人觉得不爽。</p>
+<p>
+那就是他的URL机制。。当然，也有人非常喜欢他的URL机制，比如说十分的灵活。不过我个人总觉得还有改进的地方。</p>
+<p>
+首先我认为必须要利用正则表达式这一点，这个是特色以及精华，并且确实十分方便，在我眼里属于不能更改的部分。那么自然而然改进的地方就是正则表达式和函数的映射了。</p>
+<p>
+提出问题是一方面，解决问题就是更加重要的地方了。采用何种新的方式来替换原来的URL处理呢？我为此困扰了好久。直到有一天发现了limodou大牛的Uliweb框架。被它的简洁明了的URL方式吸引了。决定采用类似Uliweb的方式处理URL。实现的具体细节，就是用Django的中间件。</p>
+<p>
+使用中间件自然有他的理由。研究官网的文档后发现，Django处理一个Request的过程是首先通过中间件，然后再通过默认的URL方式进行的。所以说我们要做的就是在Middleware这个地方把所有Request拦截住，用我们自己的方式完成处理以后直接返回Response。需要注意的是，因为我不舍得放弃Killer级别的Admin，所以必须要支持默认的URL配置方式。那么我们可以简化原来的设计思路，把中间件不能处理的Request统统不管，丢给Django去处理。简直是完美的解决方案。:)。同时也不得不赞一声Django的设计。</p>
+<p>
+接下来的设计就是考虑URL和函数处理的问题了。这个时候应该感谢的就是Python强大的语法了。提供了Decorator这种机制来解决这个问题。那么设计的思路转变成，在Request到达Middleware的时候，Import所有INSTALLED_APPS里面的views.py，目的自然就是执行Decorator。而在Decorator内部，根据到达的Request获得其访问地址，然后和处理它的函数一起生成RegexURLPattern对象，储存在缓存中。然后对每个Request进行处理，符合规则的就调用函数处理，不符合规则的，就交给Django自己去处理了。</p>
+<p>
+以下是一小段中间件代码。比较核心的部分了。其实代码量也不大。大家看看有没有实现的问题。</p>
+<pre lang="python">
+    def process_request(self,request):
+        path=request.path_info  #获得request的地址
+        urls=settings.INSTALLED_APPS  #获得当前安装的app的位置
+        def myimport(path):
+            try:
+                __import__('%s.views'%path)  #读取所有app的views。。目的是注册request处理函数
+            except:
+                pass
+        map(myimport,urls)   #执行所有
+        callback=expose.getCallback(path)  #获取相应url对应的处理函数
+        if callback:
+            return callback[0](request)  #执行。。    
+</pre>
+<p>
+整体设计大致如此，完成了0.1版本，已经放在我的代码库里面了.<a href="http://code.google.com/p/linllx/">http://code.google.com/p/linllx/</a></p>
+<p>
+目前还存在的问题就是。第一，对于需要命名分组的正则表达式的处理还不是很有头绪。第二，对于404错误的处理究竟要如何进行，目前的实现来看不是很好。请看见本文的牛人们提供一下思路。。</p>
+<p>
+总得来说，Django中间件的开发并不像我想像中的那么难，甚至可以说，还是比较简单的。下一步着手开发一个类似于Java中的Filter的中间件把。。当然，这个还是需要继续完善的。。</p>

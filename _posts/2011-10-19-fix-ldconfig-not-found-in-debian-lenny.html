@@ -1,0 +1,43 @@
+---
+layout: post
+status: publish
+published: true
+title: Fix ldconfig not found in debian lenny
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 118
+wordpress_url: http://blog.linluxiang.info/?p=118
+date: '2011-10-19 19:04:29 +0200'
+date_gmt: '2011-10-19 11:04:29 +0200'
+categories:
+- Uncategorized
+tags: []
+comments:
+- id: 62
+  author: linluxiang
+  author_email: linluxiang@gmail.com
+  author_url: ''
+  date: '2011-11-30 23:22:58 +0100'
+  date_gmt: '2011-11-30 15:22:58 +0100'
+  content: test
+---
+<p>Thx to&nbsp;http://ubuntuforums.org/showthread.php?t=1266104</p>
+<p>The point is</p>
+<p>1.<strong> Get hold of ldconfig &amp; ldconfig.real from the correct version:</strong></p>
+<p>Code: aptitude download libc6</p>
+<p>unpack it:</p>
+<p>Code: dpkg-deb -x libc6*.deb libc6-unpacked/</p>
+<p>copy them out: Code: sudo cp libc6-unpacked/sbin/ldconfig* /sbin/</p>
+<p>At this point I did:</p>
+<p>Code: sudo apt-get -f install</p>
+<p>sudo dpkg-reconfigure libc6</p>
+<p>sudo dpkg-reconfigure libc6-i386</p>
+<p>sudo apt-get install --reinstall libc6</p>
+<p>sudo apt-get install --reinstall libc6-i386</p>
+<p>Of which the reinstalls seemed to be the crucial ones.</p>
+<p>Now all errors seem to be gone.</p>

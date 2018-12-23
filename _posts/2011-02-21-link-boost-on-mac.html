@@ -1,0 +1,35 @@
+---
+layout: post
+status: publish
+published: true
+title: MacOSX中链接boost库
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 41
+wordpress_url: http://blog.linluxiang.info/?p=41
+date: '2011-02-21 20:19:04 +0100'
+date_gmt: '2011-02-21 12:19:04 +0100'
+categories:
+- 技术
+- C++
+tags:
+- C++
+comments: []
+---
+<p>
+此文来自本人原JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/700923">原文地址</a>。</p>
+<p>
+今天在编译一个用到boost_program_options的库的时候出现了一点点小问题。总是提示说找不到boost_program_options这个库。</p>
+<p>
+去/usr/local/lib下面看了一下，发现原来改名成libboost_program_options-mt.dylib了。搜了一下名字中这个mt的意思。</p>
+<p>
+原来是boost1.33的新特性，就是区分了某些lib是单线程或者多线程的。这个区分导致必须显式的指明使用的是多线程还是单线程的库。</p>
+<p>
+自然mt就是指的多线程，st指的单线程。</p>
+<p>
+改用-lboost_program_options-mt以后，编译ok。问题解决。</p>

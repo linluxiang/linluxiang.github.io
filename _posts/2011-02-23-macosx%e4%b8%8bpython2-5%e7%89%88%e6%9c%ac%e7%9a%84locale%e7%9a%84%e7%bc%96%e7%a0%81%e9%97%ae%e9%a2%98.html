@@ -1,0 +1,82 @@
+---
+layout: post
+status: publish
+published: true
+title: MacOSX下Python2.5版本的locale的编码问题
+author:
+  display_name: linluxiang
+  login: linluxiang
+  email: linluxiang@gmail.com
+  url: ''
+author_login: linluxiang
+author_email: linluxiang@gmail.com
+wordpress_id: 81
+wordpress_url: http://blog.linluxiang.info/?p=81
+date: '2011-02-23 18:58:02 +0100'
+date_gmt: '2011-02-23 10:58:02 +0100'
+categories:
+- 技术
+- Python
+tags:
+- Python
+- hack
+comments: []
+---
+
+<p>
+此文来自本人JavaEye博客，<a href="http://linluxiang.javaeye.com/blog/774666">原文地址</a></p>
+<p>
+今天更新mercurial的时候遇到了一个问题。</p>
+<p>
+执行hg，结果报错：LookupError: unknown encoding: x-mac-simp-chinese</p>
+<p>
+想到这个问题我以前在用django的时候碰到过，原来以为是django的问题，现在才知道原来是普遍的python的问题。</p>
+<p>
+去hg的源代码里面minirst.py里面看了一下，发现是直接调用mercurial的encoding函数的encoding这个变量。</p>
+<p>
+找到encoding.py里面，</p>
+<pre lang="python">
+try:  
+    encoding = os.environ.get("HGENCODING")  
+    if not encoding:  
+        encoding = locale.getpreferredencoding() or 'ascii'  
+        encoding = _encodingfixers.get(encoding, lambda: encoding)()  
+except locale.Error:  
+    encoding = 'ascii' 
+</pre>
+<p>
+原来是locale这个模块搞的鬼。。</p>
+<p>
+去locale.py里面看了一下，发现以下代码：</p>
+<pre lang="python">
+if sys.platform in ('win32', 'darwin', 'mac'):  
+    # On Win32, this will return the ANSI code page  
+    # On the Mac, it should return the system encoding;  
+    # it might return "ascii" instead  
+    def getpreferredencoding(do_setlocale = True):  
+        """Return the charset that the user is likely using."""  
+        import _locale  
+        return _locale._getdefaultlocale()[1]  
+</pre>
+<p>
+尝试执行了一下，直接返回了'x-mac-simp-chinese'</p>
+<p>
+为了了解正确的结果，python2.6 -c 'import locale; print(locale.getpreferredencoding());'返回结果'UTF-8'.</p>
+<p>
+而UTF-8正是我设置的LC_ALL和LANG的结果。</p>
+<p>
+看来是这个_locale模块搞得鬼。不过_locale啊。看名字就是c写的。为了省力。直接把</p>
+<pre lang="python">
+if sys.platform in ('win32', 'darwin', 'mac'):
+</pre>
+<p>
+改成了</p>
+<pre lang="python">
+if sys.platform in ('win32'):  
+</pre>
+<p>
+然后顺手搜索了一下locale.py中的_locale，把所有的都改了。</p>
+<p>
+执行hg，一切正常。</p>
+<p>
+顺带搜了一下这个问题python的buglist里面有没有，果然看到了。<a href="http://bugs.python.org/issue1276">http://bugs.python.org/issue1276</a>。不过略看了一下，发现python2.5.x被无情的忽略了。看来只能自己hack了。：）。</p>
