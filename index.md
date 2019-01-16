@@ -1,4 +1,6 @@
-# Lin Luxiang's personal blog
+---
+title: Home
+layout: home
+---
 
-
-[First Article](docs/2018-12-17-First-Article)
+Stay Hungry, Stay Foolish.
